@@ -1,41 +1,50 @@
 package edu.nd.pmcburne.hello
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import edu.nd.pmcburne.hello.data.AppDatabase
+import edu.nd.pmcburne.hello.data.PlacemarkEntity
+import edu.nd.pmcburne.hello.data.PlacemarksRepository
+import edu.nd.pmcburne.hello.network.PlacemarksApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
-data class MainUIState(
-    val counterValue: Int
+data class MainUiState(
+    val tags: List<String> = emptyList(),
+    val selectedTag: String = "core",
+    val placemarks: List<PlacemarkEntity> = emptyList(),
+    val isLoading: Boolean = true
 )
 
-class MainViewModel(
-    val initialCounterValue: Int = 0
-) : ViewModel() {
-    private val _uiState = MutableStateFlow(MainUIState(initialCounterValue))
-    val uiState: StateFlow<MainUIState> = _uiState.asStateFlow()
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+    private val database = AppDatabase.getDatabase(application)
+    private val repository = PlacemarksRepository(database.placemarkDao(), PlacemarksApi.create())
 
-    fun incrementCounter() {
-        _uiState.update{ currentState ->
-            currentState.copy(counterValue = _uiState.value.counterValue + 1)
+    private val _uiState = MutableStateFlow(MainUiState())
+    val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            repository.syncPlacemarks()
+            val tags = repository.getAllUniqueTags()
+            val placemarks = repository.getPlacemarksByTag("core")
+            _uiState.value = MainUiState(
+                tags = tags,
+                selectedTag = "core",
+                placemarks = placemarks,
+                isLoading = false
+            )
         }
     }
 
-    fun decrementCounter() {
-        _uiState.update{ currentState ->
-            currentState.copy(counterValue = _uiState.value.counterValue - 1)
+    fun selectTag(tag: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(selectedTag = tag)
+            val placemarks = repository.getPlacemarksByTag(tag)
+            _uiState.value = _uiState.value.copy(placemarks = placemarks)
         }
     }
-
-    fun resetCounter() {
-        _uiState.update { currentState ->
-            currentState.copy(counterValue = 0)
-        }
-    }
-
-    val isDecrementEnabled: Boolean
-        get() = _uiState.value.counterValue > 0
-    val isResetEnabled: Boolean
-        get() = _uiState.value.counterValue > 0
 }
